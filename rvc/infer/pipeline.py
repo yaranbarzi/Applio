@@ -357,6 +357,7 @@ class Pipeline:
             )
         elif f0_method == "rmvpe":
             f0 = self.model_rmvpe.infer_from_audio(x, thred=0.03)
+            uv = self.model_rmvpe.compute_uv(f0, x, p_len)
         elif f0_method == "fcpe":
             self.model_fcpe = FCPEF0Predictor(
                 os.path.join("rvc", "models", "predictors", "fcpe.pt"),
@@ -406,7 +407,7 @@ class Pipeline:
         f0_mel[f0_mel > 255] = 255
         f0_coarse = np.rint(f0_mel).astype(int)
 
-        return f0_coarse, f0bak
+        return f0_coarse, f0bak, uv
 
     def voice_conversion(
         self,
@@ -416,6 +417,7 @@ class Pipeline:
         audio0,
         pitch,
         pitchf,
+        uv,
         index,
         big_npy,
         index_rate,
@@ -486,7 +488,7 @@ class Pipeline:
                 pitch, pitchf = None, None
             p_len = torch.tensor([p_len], device=self.device).long()
             audio1 = (
-                (net_g.infer(feats, p_len, pitch, pitchf, sid)[0][0, 0])
+                (net_g.infer(feats, p_len, pitch, pitchf, sid, uv=uv)[0][0, 0])
                 .data.cpu()
                 .float()
                 .numpy()
@@ -598,7 +600,7 @@ class Pipeline:
                 print(f"An error occurred reading the F0 file: {error}")
         sid = torch.tensor(sid, device=self.device).unsqueeze(0).long()
         if pitch_guidance:
-            pitch, pitchf = self.get_f0(
+            pitch, pitchf, uv = self.get_f0(
                 "input_audio_path",  # questionable purpose of making a key for an array
                 audio_pad,
                 p_len,
@@ -616,6 +618,7 @@ class Pipeline:
                 pitchf = pitchf.astype(np.float32)
             pitch = torch.tensor(pitch, device=self.device).unsqueeze(0).long()
             pitchf = torch.tensor(pitchf, device=self.device).unsqueeze(0).float()
+            uv = torch.from_numpy(uv).float().to(self.device).unsqueeze(0)
         for t in opt_ts:
             t = t // self.window * self.window
             if pitch_guidance:
@@ -627,6 +630,7 @@ class Pipeline:
                         audio_pad[s : t + self.t_pad2 + self.window],
                         pitch[:, s // self.window : (t + self.t_pad2) // self.window],
                         pitchf[:, s // self.window : (t + self.t_pad2) // self.window],
+                        uv,
                         index,
                         big_npy,
                         index_rate,
@@ -660,6 +664,7 @@ class Pipeline:
                     audio_pad[t:],
                     pitch[:, t // self.window :] if t is not None else pitch,
                     pitchf[:, t // self.window :] if t is not None else pitchf,
+                    uv,
                     index,
                     big_npy,
                     index_rate,

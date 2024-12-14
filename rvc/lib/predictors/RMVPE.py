@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import numpy as np
 
 from librosa.filters import mel
-from typing import List
+from typing import List, Union
 
 # Constants for readability
 N_MELS = 128
@@ -506,6 +506,53 @@ class RMVPE0Predictor:
             hidden = hidden.astype("float32")
         f0 = self.decode(hidden, thred=thred)
         return f0
+    def repeat_expand(
+        self, content: Union[torch.Tensor, np.ndarray], target_len: int, mode: str = "nearest"
+    ):
+        ndim = content.ndim
+
+        if content.ndim == 1:
+            content = content[None, None]
+        elif content.ndim == 2:
+            content = content[None]
+
+        assert content.ndim == 3
+
+        is_np = isinstance(content, np.ndarray)
+        if is_np:
+            content = torch.from_numpy(content)
+
+        results = torch.nn.functional.interpolate(content, size=target_len, mode=mode)
+
+        if is_np:
+            results = results.numpy()
+
+        if ndim == 1:
+            return results[0, 0]
+        elif ndim == 2:
+            return results[0]
+    def compute_uv(self, f0, wav, p_len=None): 
+        x = torch.FloatTensor(wav).to(torch.float32).to(self.device)
+        if p_len is None:
+            p_len = x.shape[0] // 160
+        else:
+            assert abs(p_len - x.shape[0] // 160) < 4, "pad length error"
+            
+        if isinstance(f0, np.ndarray):
+            f0 = torch.from_numpy(f0).float().to(x.device)
+
+        if torch.all(f0 == 0):  # Handle the silence case
+            rtn =  np.zeros(p_len) if p_len is not None else np.zeros_like(f0)
+            return rtn # Returns an array of zeros for uv
+
+        f0 = self.repeat_expand(f0, p_len) if hasattr(self, "repeat_expand") else f0
+
+        uv = torch.zeros_like(f0)
+        uv[f0 > 0.0] = 1.0
+        uv[f0 <= 0.0] = 0.0
+        uv = F.interpolate(uv[None, None, :], size=p_len)[0][0].cpu().numpy()
+
+        return uv
 
     def to_local_average_cents(self, salience, thred=0.05):
         """
