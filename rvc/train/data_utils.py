@@ -66,10 +66,8 @@ class TextAudioLoaderMultiNSFsid(torch.utils.data.Dataset):
         pitch = audiopath_and_text[2]
         pitchf = audiopath_and_text[3]
         dv = audiopath_and_text[4]
-        
-        uv = audiopath_and_text[2].replace("wav.npy", "mask.npy")
 
-        phone, pitch, pitchf = self.get_labels(phone, pitch, pitchf, uv)
+        phone, pitch, pitchf = self.get_labels(phone, pitch, pitchf)
         spec, wav = self.get_audio(file)
         dv = self.get_sid(dv)
 
@@ -85,11 +83,10 @@ class TextAudioLoaderMultiNSFsid(torch.utils.data.Dataset):
             phone = phone[:len_min, :]
             pitch = pitch[:len_min]
             pitchf = pitchf[:len_min]
-            uv = uv[:len_min]
 
-        return (spec, wav, phone, pitch, pitchf, dv, uv)
+        return (spec, wav, phone, pitch, pitchf, dv)
 
-    def get_labels(self, phone, pitch, pitchf, uv):
+    def get_labels(self, phone, pitch, pitchf):
         """
         Loads and processes phoneme, pitch, and pitchf labels.
 
@@ -97,7 +94,6 @@ class TextAudioLoaderMultiNSFsid(torch.utils.data.Dataset):
             phone (str): Path to phoneme label file.
             pitch (str): Path to pitch label file.
             pitchf (str): Path to pitchf label file.
-            uv (str): Path to uv label file.
         """
         phone = np.load(phone)
         phone = np.repeat(phone, 2, axis=0)
@@ -110,8 +106,7 @@ class TextAudioLoaderMultiNSFsid(torch.utils.data.Dataset):
         phone = torch.FloatTensor(phone)
         pitch = torch.LongTensor(pitch)
         pitchf = torch.FloatTensor(pitchf)
-        uv = torch.FloatTensor(uv)
-        return phone, pitch, pitchf, uv
+        return phone, pitch, pitchf
 
     def get_audio(self, filename):
         """
@@ -208,11 +203,9 @@ class TextAudioCollateMultiNSFsid:
         )
         pitch_padded = torch.LongTensor(len(batch), max_phone_len)
         pitchf_padded = torch.FloatTensor(len(batch), max_phone_len)
-        uv_padded = torch.FloatTensor(len(batch), max_phone_len)
         phone_padded.zero_()
         pitch_padded.zero_()
         pitchf_padded.zero_()
-        uv_padded.zero_()
         sid = torch.LongTensor(len(batch))
 
         for i in range(len(ids_sorted_decreasing)):
@@ -236,9 +229,6 @@ class TextAudioCollateMultiNSFsid:
             pitchf_padded[i, : pitchf.size(0)] = pitchf
 
             sid[i] = row[5]
-            
-            uv = row[6] 
-            uv_padded[i, :uv.size(0)] = uv
 
         return (
             phone_padded,
@@ -250,7 +240,6 @@ class TextAudioCollateMultiNSFsid:
             wave_padded,
             wave_lengths,
             sid,
-            uv_padded,
         )
 
 
