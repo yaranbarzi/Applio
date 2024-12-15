@@ -432,6 +432,13 @@ def inference_tab():
                     value=False,
                     interactive=True,
                 )
+                f0_prediction = gr.Checkbox(
+                    label=i18n("Predict F0"),
+                    info=i18n("Enable F0 prediction for your audio processing tasks."),
+                    visible=True,
+                    value=False,
+                    interactive=True,
+                )
                 autotune = gr.Checkbox(
                     label=i18n("Autotune"),
                     info=i18n(
@@ -2093,6 +2100,7 @@ def inference_tab():
             delay_feedback,
             delay_mix,
             sid,
+            f0_prediction,
         ],
         outputs=[vc_output1, vc_output2],
     )

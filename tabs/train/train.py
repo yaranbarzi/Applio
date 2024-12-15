@@ -637,6 +637,15 @@ def train_tab():
                         value=True,
                         interactive=True,
                     )
+                    auto_f0_prediction = gr.Checkbox(
+                        label=i18n("auto_f0_prediction"),
+                        info=i18n(
+                            "Enable F0 prediction."
+                        ),
+                        visible=True,
+                        value=False,
+                        interactive=True,
+                    )
             with gr.Column():
                 custom_pretrained = gr.Checkbox(
                     label=i18n("Custom Pretrained"),
@@ -780,6 +789,7 @@ def train_tab():
                     custom_pretrained,
                     g_pretrained_path,
                     d_pretrained_path,
+                    auto_f0_prediction,
                 ],
                 outputs=[train_output_info],
             )

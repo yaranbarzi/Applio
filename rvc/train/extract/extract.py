@@ -42,6 +42,12 @@ class FeatureInput:
         self.f0_mel_max = 1127 * np.log(1 + self.f0_max / 700)
         self.device = device
         self.model_rmvpe = None
+        
+    def _f0uv(self, f0):
+        # generate uv signal
+        uv = torch.ones_like(f0)
+        uv = uv * (f0 > 0.0)
+        return uv
 
     def compute_f0(self, np_arr, f0_method, hop_length):
         """Extract F0 using the specified method."""
@@ -94,6 +100,7 @@ class FeatureInput:
     def process_file(self, file_info, f0_method, hop_length):
         """Process a single audio file for F0 extraction."""
         inp_path, opt_path1, opt_path2, _ = file_info
+        uv_path = opt_path2.replace("wav.npy", "mask.npy")
 
         if os.path.exists(opt_path1) and os.path.exists(opt_path2):
             return
@@ -101,7 +108,9 @@ class FeatureInput:
         try:
             np_arr = load_audio(inp_path, 16000)
             feature_pit = self.compute_f0(np_arr, f0_method, hop_length)
+            uv = self._f0uv(feature_pit)
             np.save(opt_path2, feature_pit, allow_pickle=False)
+            np.save(uv_path, uv, allow_pickle=False)
             coarse_pit = self.coarse_f0(feature_pit)
             np.save(opt_path1, coarse_pit, allow_pickle=False)
         except Exception as error:

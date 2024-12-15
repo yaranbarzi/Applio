@@ -70,6 +70,7 @@ cache_data_in_gpu = strtobool(sys.argv[13])
 overtraining_detector = strtobool(sys.argv[14])
 overtraining_threshold = int(sys.argv[15])
 cleanup = strtobool(sys.argv[16])
+auto_f0_prediction = strtobool(sys.argv[17])
 
 current_dir = os.getcwd()
 experiment_dir = os.path.join(current_dir, "logs", model_name)
@@ -365,6 +366,7 @@ def run(
         use_f0=pitch_guidance == True,  # converting 1/0 to True/False
         is_half=config.train.fp16_run and device.type == "cuda",
         sr=sample_rate,
+        auto_f0_prediction=auto_f0_prediction
     ).to(device)
 
     net_d = MultiPeriodDiscriminator(version, config.model.use_spectral_norm).to(device)
@@ -551,6 +553,8 @@ def train_and_evaluate(
 
     net_g.train()
     net_d.train()
+    
+    auto_f0_prediction = net_g.module.auto_f0_prediction if hasattr(net_g, "module") else net_g.auto_f0_prediction
 
     # Data caching
     if device.type == "cuda" and cache_data_in_gpu:
@@ -594,9 +598,17 @@ def train_and_evaluate(
                 model_output = net_g(
                     phone, phone_lengths, pitch, pitchf, spec, spec_lengths, sid
                 )
-                y_hat, ids_slice, x_mask, z_mask, (z, z_p, m_p, logs_p, m_q, logs_q) = (
-                    model_output
-                )
+                (
+                    y_hat,
+                    ids_slice,
+                    x_mask,
+                    z_mask,
+                    (z, z_p, m_p, logs_p, m_q, logs_q),
+                    pred_lf0,
+                    norm_lf0,
+                    lf0,
+                ) = model_output
+
                 # slice of the original waveform to match a generate slice
                 wave = commons.slice_segments(
                     wave,
@@ -626,7 +638,13 @@ def train_and_evaluate(
                     )
                     loss_fm = feature_loss(fmap_r, fmap_g)
                     loss_gen, losses_gen = generator_loss(y_d_hat_g)
-                    loss_gen_all = loss_gen + loss_fm + loss_mel + loss_kl
+                    loss_lf0 = (
+                        F.mse_loss(pred_lf0, lf0)
+                        if auto_f0_prediction
+                        else 0
+                    )
+
+                    loss_gen_all = loss_gen + loss_fm + loss_mel + loss_kl + loss_lf0
 
                     if loss_gen_all < lowest_value["value"]:
                         lowest_value = {
@@ -692,6 +710,7 @@ def train_and_evaluate(
             "loss/g/fm": loss_fm,
             "loss/g/mel": loss_mel,
             "loss/g/kl": loss_kl,
+            "loss/g/lf0": loss_lf0,
         }
         # commented out
         # scalar_dict.update({f"loss/g/{i}": v for i, v in enumerate(losses_gen)})
@@ -703,6 +722,20 @@ def train_and_evaluate(
             "slice/mel_gen": plot_spectrogram_to_numpy(y_hat_mel[0].data.cpu().numpy()),
             "all/mel": plot_spectrogram_to_numpy(mel[0].data.cpu().numpy()),
         }
+        
+        if auto_f0_prediction:
+            image_dict.update(
+                {
+                    "all/lf0": plot_spectrogram_to_numpy(
+                        lf0[0, 0, :].cpu().numpy(),
+                        pred_lf0[0, 0, :].detach().cpu().numpy(),
+                    ),
+                    "all/norm_lf0": plot_spectrogram_to_numpy(
+                        lf0[0, 0, :].cpu().numpy(),
+                        norm_lf0[0, 0, :].detach().cpu().numpy(),
+                    ),
+                }
+            )
 
         if epoch % save_every_epoch == 0:
             with torch.no_grad():

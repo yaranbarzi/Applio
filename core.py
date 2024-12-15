@@ -112,6 +112,7 @@ def run_infer_script(
     delay_feedback: float = 0.0,
     delay_mix: float = 0.5,
     sid: int = 0,
+    f0_prediction: bool = False,
 ):
     kwargs = {
         "audio_input_path": input_path,
@@ -176,6 +177,7 @@ def run_infer_script(
         "delay_feedback": delay_feedback,
         "delay_mix": delay_mix,
         "sid": sid,
+        "f0_prediction": f0_prediction,
     }
     infer_pipeline = import_voice_converter()
     infer_pipeline.convert_audio(
@@ -512,6 +514,7 @@ def run_train_script(
     custom_pretrained: bool = False,
     g_pretrained_path: str = None,
     d_pretrained_path: str = None,
+    auto_f0_prediction: bool = False,
 ):
 
     if pretrained == True:
@@ -553,6 +556,7 @@ def run_train_script(
                 overtraining_detector,
                 overtraining_threshold,
                 cleanup,
+                auto_f0_prediction,
             ],
         ),
     ]
@@ -857,6 +861,13 @@ def parse_arguments():
         help=sid_description,
         default=0,
         required=False,
+    )
+    infer_parser.add_argument(
+        "--f0_prediction",
+        type=lambda x: bool(strtobool(x)),
+        choices=[True, False],
+        help="Automatic f0 prediction",
+        default=False,
     )
     post_process_description = "Apply post-processing effects to the output audio."
     infer_parser.add_argument(
@@ -2085,6 +2096,13 @@ def parse_arguments():
         default="Auto",
         required=False,
     )
+    train_parser.add_argument(
+        "--auto_f0_prediction",
+        type=lambda x: bool(strtobool(x)),
+        choices=[True, False],
+        help="Automatic f0 prediction",
+        default=False,
+    )
 
     # Parser for 'index' mode
     index_parser = subparsers.add_parser(
@@ -2294,6 +2312,7 @@ def main():
                 formant_qfrency=args.formant_qfrency,
                 formant_timbre=args.formant_timbre,
                 sid=args.sid,
+                f0_prediction=args.f0_prediction,
                 post_process=args.post_process,
                 reverb=args.reverb,
                 pitch_shift=args.pitch_shift,
@@ -2465,6 +2484,7 @@ def main():
                 cache_data_in_gpu=args.cache_data_in_gpu,
                 g_pretrained_path=args.g_pretrained_path,
                 d_pretrained_path=args.d_pretrained_path,
+                auto_f0_prediction=args.auto_f0_prediction,
             )
         elif args.mode == "index":
             run_index_script(

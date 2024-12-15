@@ -174,13 +174,14 @@ class Synthesizer(torch.nn.Module):
         sr: int,
         use_f0: bool,
         text_enc_hidden_dim: int = 768,
-        use_automatic_f0_prediction: bool = True,
+        auto_f0_prediction: bool = True,
         **kwargs,
     ):
         super().__init__()
         self.segment_size = segment_size
         self.gin_channels = gin_channels
         self.use_f0 = use_f0
+        self.auto_f0_prediction = auto_f0_prediction
 
         self.enc_p = TextEncoder(
             inter_channels,
@@ -234,7 +235,7 @@ class Synthesizer(torch.nn.Module):
             3,
             gin_channels=gin_channels,
         )
-        if use_automatic_f0_prediction:
+        if auto_f0_prediction:
             self.f0_decoder = F0Decoder(
                 1,
                 hidden_channels,
@@ -261,6 +262,12 @@ class Synthesizer(torch.nn.Module):
     def __prepare_scriptable__(self):
         self.remove_weight_norm()
         return self
+    
+    def _f0uv(self, f0):
+        # generate uv signal
+        uv = torch.ones_like(f0)
+        uv = uv * (f0 > 0.0)
+        return uv
 
     def forward(
         self,
@@ -298,10 +305,20 @@ class Synthesizer(torch.nn.Module):
                 o = self.dec(z_slice, pitchf, g=g)
             else:
                 o = self.dec(z_slice, g=g)
+                
+            if self.auto_f0_prediction:
+                uv = self._f0uv(pitch)
+                lf0 = 2595. * torch.log10(1. + pitch.unsqueeze(1) / 700.) / 500
+                norm_lf0 = normalize_f0(lf0, x_mask, uv)
+                pred_lf0 = self.f0_decoder(m_p, norm_lf0, x_mask, spk_emb=g)
+            else:
+                lf0 = 0
+                norm_lf0 = 0
+                pred_lf0 = 0
 
-            return o, ids_slice, x_mask, y_mask, (z, z_p, m_p, logs_p, m_q, logs_q)
+            return o, ids_slice, x_mask, y_mask, (z, z_p, m_p, logs_p, m_q, logs_q), pred_lf0, norm_lf0, lf0
 
-        return None, None, x_mask, None, (None, None, m_p, logs_p, None, None)
+        return None, None, x_mask, None, (None, None, m_p, logs_p, None, None), None, None, None
 
     @torch.jit.export
     def infer(
@@ -312,8 +329,7 @@ class Synthesizer(torch.nn.Module):
         nsff0: Optional[torch.Tensor] = None,
         sid: torch.Tensor = None,
         rate: Optional[torch.Tensor] = None,
-        predict_f0: bool = True,
-        uv: Optional[torch.Tensor] = None,
+        f0_prediction: bool = False,
     ):
         """
         Inference of the model.
@@ -330,7 +346,8 @@ class Synthesizer(torch.nn.Module):
         m_p, logs_p, x_mask = self.enc_p(phone, pitch, phone_lengths)
         z_p = (m_p + torch.exp(logs_p) * torch.randn_like(m_p) * 0.66666) * x_mask
         
-        if predict_f0:
+        if f0_prediction:
+            uv = self._f0uv(pitch)
             lf0 = 2595. * torch.log10(1. + pitch.unsqueeze(1) / 700.) / 500.
             norm_lf0 = normalize_f0(lf0, x_mask, uv, random_scale=False)
             pred_lf0 = self.f0_decoder(m_p, norm_lf0, x_mask, g)

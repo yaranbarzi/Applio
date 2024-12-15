@@ -219,6 +219,7 @@ class VoiceConverter:
         post_process: bool = False,
         resample_sr: int = 0,
         sid: int = 0,
+        f0_prediction: bool = False,
         **kwargs,
     ):
         """
@@ -311,6 +312,7 @@ class VoiceConverter:
                     f0_autotune=f0_autotune,
                     f0_autotune_strength=f0_autotune_strength,
                     f0_file=f0_file,
+                    f0_prediction=f0_prediction,
                 )
                 converted_chunks.append(audio_opt)
                 if split_audio:
