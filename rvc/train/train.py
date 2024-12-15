@@ -30,6 +30,7 @@ import rvc.lib.zluda
 from utils import (
     HParams,
     plot_spectrogram_to_numpy,
+    plot_data_to_numpy,
     summarize,
     load_checkpoint,
     save_checkpoint,
@@ -726,11 +727,11 @@ def train_and_evaluate(
         if auto_f0_prediction:
             image_dict.update(
                 {
-                    "all/lf0": plot_spectrogram_to_numpy(
+                    "all/lf0": plot_data_to_numpy(
                         lf0[0, 0, :].cpu().numpy(),
                         pred_lf0[0, 0, :].detach().cpu().numpy(),
                     ),
-                    "all/norm_lf0": plot_spectrogram_to_numpy(
+                    "all/norm_lf0": plot_data_to_numpy(
                         lf0[0, 0, :].cpu().numpy(),
                         norm_lf0[0, 0, :].detach().cpu().numpy(),
                     ),

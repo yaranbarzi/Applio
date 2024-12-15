@@ -190,6 +190,22 @@ def plot_spectrogram_to_numpy(spectrogram):
     plt.close(fig)
     return data
 
+def plot_data_to_numpy(x, y):
+    global MATPLOTLIB_FLAG
+    if not MATPLOTLIB_FLAG:
+        plt.switch_backend("Agg")
+        MATPLOTLIB_FLAG = True
+
+    fig, ax = plt.subplots(figsize=(10, 2))
+    plt.plot(x)
+    plt.plot(y)
+    plt.tight_layout()
+
+    fig.canvas.draw()
+    data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+    data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+    plt.close()
+    return data
 
 def load_wav_to_torch(full_path):
     """
