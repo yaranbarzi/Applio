@@ -133,7 +133,10 @@ class F0Decoder(torch.nn.Module):
         if spk_emb is not None:
             x = x + self.cond(spk_emb)
             
-        x += self.f0_prenet(norm_lf0)
+        if self.f0_prenet.weight.dtype == torch.float16:
+           x += self.f0_prenet(norm_lf0.half())
+        else:
+           x += self.f0_prenet(norm_lf0)
         x = self.prenet(x) * x_mask
         x = self.decoder(x * x_mask, x_mask)
         pred_lf0 = self.proj(x) * x_mask

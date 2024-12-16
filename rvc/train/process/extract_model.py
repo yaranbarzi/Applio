@@ -33,6 +33,7 @@ def extract_model(
     version,
     hps,
     overtrain_info,
+    f0_p,
 ):
     try:
         print(f"Saved model '{model_dir}' (epoch {epoch} and step {step})")
@@ -68,6 +69,10 @@ def extract_model(
                 key: value.half() for key, value in ckpt.items() if "enc_q" not in key
             }
         )
+        if f0_p:
+            opt["f_weight"] = {
+                key: value.half() for key, value in f0_p.items()
+            }
         opt["config"] = [
             hps.data.filter_length // 2 + 1,
             32,
@@ -105,6 +110,7 @@ def extract_model(
         opt["author"] = model_author
         opt["embedder_model"] = embedder_model
         opt["speakers_id"] = speakers_id
+        opt["f0_prediction"] = True if f0_p else False
 
         torch.save(opt, os.path.join(model_dir_path, pth_file))
 

@@ -53,6 +53,7 @@ class VoiceConverter:
         self.last_embedder_model = None  # Last used embedder model
         self.tgt_sr = None  # Target sampling rate for the output audio
         self.net_g = None  # Generator network for voice conversion
+        self.net_f = None
         self.vc = None  # Voice conversion pipeline instance
         self.cpt = None  # Checkpoint for loading model weights
         self.version = None  # Model version
@@ -312,7 +313,7 @@ class VoiceConverter:
                     f0_autotune=f0_autotune,
                     f0_autotune_strength=f0_autotune_strength,
                     f0_file=f0_file,
-                    f0_prediction=f0_prediction,
+                    f0_prediction=self.net_f if f0_prediction else False,
                 )
                 converted_chunks.append(audio_opt)
                 if split_audio:
@@ -444,12 +445,12 @@ class VoiceConverter:
         Cleans up the model and releases resources.
         """
         if self.hubert_model is not None:
-            del self.net_g, self.n_spk, self.vc, self.hubert_model, self.tgt_sr
-            self.hubert_model = self.net_g = self.n_spk = self.vc = self.tgt_sr = None
+            del self.net_g, self.net_f, self.n_spk, self.vc, self.hubert_model, self.tgt_sr
+            self.hubert_model = self.net_g, self.net_f = self.n_spk = self.vc = self.tgt_sr = None
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
-        del self.net_g, self.cpt
+        del self.net_g, self.net_f, self.cpt
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
         self.cpt = None
@@ -475,6 +476,26 @@ class VoiceConverter:
             self.tgt_sr = self.cpt["config"][-1]
             self.cpt["config"][-3] = self.cpt["weight"]["emb_g.weight"].shape[0]
             self.use_f0 = self.cpt.get("f0", 1)
+            self.f0_prediction = self.cpt.get("f0_prediction", False)
+            
+            #net_f
+            if self.f0_prediction:
+                from rvc.lib.algorithm.f0_decoder import F0Decoder
+                self.net_f = F0Decoder(
+                    1,
+                    self.cpt["config"][3],
+                    self.cpt["config"][4],
+                    self.cpt["config"][5],
+                    self.cpt["config"][6],
+                    self.cpt["config"][7],
+                    self.cpt["config"][8],
+                    self.cpt["config"][16]
+                )
+                self.net_f.load_state_dict(self.cpt["f_weight"], strict=False)
+                self.net_f.eval().to(self.config.device)
+                self.net_f = (
+                    self.net_f.half() if self.config.is_half else self.net_f.float()
+                )
 
             self.version = self.cpt.get("version", "v1")
             self.text_enc_hidden_dim = 768 if self.version == "v2" else 256

@@ -941,6 +941,13 @@ def train_and_evaluate(
                 if hasattr(net_g, "module")
                 else net_g.state_dict()
             )
+            if net_f is not None:
+                f_ckpt = (
+                    net_f.module.state_dict()
+                    if hasattr(net_f, "module")
+                    else net_f.state_dict()
+                )
+            
             for m in model_add:
                 if not os.path.exists(m):
                     extract_model(
@@ -955,6 +962,7 @@ def train_and_evaluate(
                         version=version,
                         hps=hps,
                         overtrain_info=overtrain_info,
+                        f0_p=f_ckpt if net_f else None,
                     )
         # Clean-up old best epochs
         for m in model_del:
