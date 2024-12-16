@@ -72,6 +72,7 @@ overtraining_detector = strtobool(sys.argv[14])
 overtraining_threshold = int(sys.argv[15])
 cleanup = strtobool(sys.argv[16])
 auto_f0_prediction = strtobool(sys.argv[17])
+pretrainF = ""#sys.argv[18]
 
 current_dir = os.getcwd()
 experiment_dir = os.path.join(current_dir, "logs", model_name)
@@ -369,6 +370,21 @@ def run(
         sr=sample_rate,
         auto_f0_prediction=auto_f0_prediction
     ).to(device)
+    
+    if auto_f0_prediction:
+        from rvc.lib.algorithm.f0_decoder import F0Decoder
+        net_f = F0Decoder(
+                1,
+                config["model"]["hidden_channels"],
+                config["model"]["filter_channels"],
+                config["model"]["n_heads"],
+                config["model"]["n_layers"],
+                config["model"]["kernel_size"],
+                config["model"]["p_dropout"],
+                config["model"]["gin_channels"]
+            ).to(device)
+    else:
+        net_f = None
 
     net_d = MultiPeriodDiscriminator(version, config.model.use_spectral_norm).to(device)
 
@@ -378,6 +394,12 @@ def run(
         betas=config.train.betas,
         eps=config.train.eps,
     )
+    optim_f = torch.optim.AdamW(
+        net_f.parameters(),
+        config.train.learning_rate,
+        betas=config.train.betas,
+        eps=config.train.eps,
+    )  
     optim_d = torch.optim.AdamW(
         net_d.parameters(),
         config.train.learning_rate,
@@ -390,6 +412,7 @@ def run(
     # Wrap models with DDP for multi-gpu processing
     if n_gpus > 1 and device.type == "cuda":
         net_g = DDP(net_g, device_ids=[rank])
+        net_f = DDP(net_f, device_ids=[rank])
         net_d = DDP(net_d, device_ids=[rank])
 
     # Load checkpoint if available
@@ -398,6 +421,9 @@ def run(
         _, _, _, epoch_str = load_checkpoint(
             latest_checkpoint_path(experiment_dir, "D_*.pth"), net_d, optim_d
         )
+        _, _, _, epoch_str = load_checkpoint(
+            latest_checkpoint_path(experiment_dir, "F_*.pth"), net_f, optim_f
+        )   
         _, _, _, epoch_str = load_checkpoint(
             latest_checkpoint_path(experiment_dir, "G_*.pth"), net_g, optim_g
         )
@@ -419,6 +445,18 @@ def run(
                 net_g.load_state_dict(
                     torch.load(pretrainG, map_location="cpu")["model"]
                 )
+        
+        if pretrainF != "" and pretrainF != "None":
+            if rank == 0:
+                print(f"Loaded pretrained (F) '{pretrainF}'")
+            if hasattr(net_f, "module"):
+                net_f.module.load_state_dict(
+                    torch.load(pretrainF, map_location="cpu")["model"]
+                )
+            else:
+                net_f.load_state_dict(
+                    torch.load(pretrainF, map_location="cpu")["model"]
+                )
 
         if pretrainD != "" and pretrainD != "None":
             if rank == 0:
@@ -436,6 +474,9 @@ def run(
     scheduler_g = torch.optim.lr_scheduler.ExponentialLR(
         optim_g, gamma=config.train.lr_decay, last_epoch=epoch_str - 2
     )
+    scheduler_f = torch.optim.lr_scheduler.ExponentialLR(
+        optim_f, gamma=config.train.lr_decay, last_epoch=epoch_str - 2
+    )    
     scheduler_d = torch.optim.lr_scheduler.ExponentialLR(
         optim_d, gamma=config.train.lr_decay, last_epoch=epoch_str - 2
     )
@@ -488,8 +529,8 @@ def run(
             rank,
             epoch,
             config,
-            [net_g, net_d],
-            [optim_g, optim_d],
+            [net_g, net_f, net_d],
+            [optim_g, optim_f, optim_d],
             scaler,
             [train_loader, None],
             [writer, writer_eval],
@@ -502,6 +543,7 @@ def run(
         )
 
         scheduler_g.step()
+        scheduler_f.step()
         scheduler_d.step()
 
 
@@ -544,8 +586,8 @@ def train_and_evaluate(
         consecutive_increases_gen = 0
         consecutive_increases_disc = 0
 
-    net_g, net_d = nets
-    optim_g, optim_d = optims
+    net_g, net_f, net_d = nets
+    optim_g, optim_f, optim_d = optims
     train_loader = loaders[0] if loaders is not None else None
     if writers is not None:
         writer = writers[0]
@@ -553,10 +595,9 @@ def train_and_evaluate(
     train_loader.batch_sampler.set_epoch(epoch)
 
     net_g.train()
+    net_f.train()
     net_d.train()
     
-    auto_f0_prediction = net_g.module.auto_f0_prediction if hasattr(net_g, "module") else net_g.auto_f0_prediction
-
     # Data caching
     if device.type == "cuda" and cache_data_in_gpu:
         data_iterator = cache
@@ -599,16 +640,13 @@ def train_and_evaluate(
                 model_output = net_g(
                     phone, phone_lengths, pitch, pitchf, spec, spec_lengths, sid
                 )
-                (
-                    y_hat,
-                    ids_slice,
-                    x_mask,
-                    z_mask,
-                    (z, z_p, m_p, logs_p, m_q, logs_q),
-                    pred_lf0,
-                    norm_lf0,
-                    lf0,
-                ) = model_output
+                y_hat, ids_slice, x_mask, z_mask, (z, z_p, m_p, logs_p, m_q, logs_q), g = (
+                    model_output
+                )
+                if net_f:
+                    pred_lf0, norm_lf0, lf0 = net_f(pitch, m_p.detach(), x_mask.detach(), g.detach())
+                else:
+                    pred_lf0, norm_lf0, lf0 = 0, 0, 0
 
                 # slice of the original waveform to match a generate slice
                 wave = commons.slice_segments(
@@ -639,13 +677,11 @@ def train_and_evaluate(
                     )
                     loss_fm = feature_loss(fmap_r, fmap_g)
                     loss_gen, losses_gen = generator_loss(y_d_hat_g)
-                    loss_lf0 = (
-                        F.mse_loss(pred_lf0, lf0)
-                        if auto_f0_prediction
-                        else 0
-                    )
-
-                    loss_gen_all = loss_gen + loss_fm + loss_mel + loss_kl + loss_lf0
+                    if net_f:
+                        loss_lf0 = F.mse_loss(pred_lf0, lf0)
+                    else: 
+                        loss_lf0 = 0
+                    loss_gen_all = loss_gen + loss_fm + loss_mel + loss_kl
 
                     if loss_gen_all < lowest_value["value"]:
                         lowest_value = {
@@ -653,7 +689,14 @@ def train_and_evaluate(
                             "value": loss_gen_all,
                             "epoch": epoch,
                         }
-
+                        
+            if net_f:
+                optim_f.zero_grad()
+                scaler.scale(loss_lf0).backward()
+                scaler.unscale_(optim_f)
+                scaler.step(optim_f)
+                scaler.update()
+                
             optim_g.zero_grad()
             scaler.scale(loss_gen_all).backward()
             scaler.unscale_(optim_g)
@@ -724,7 +767,7 @@ def train_and_evaluate(
             "all/mel": plot_spectrogram_to_numpy(mel[0].data.cpu().numpy()),
         }
         
-        if auto_f0_prediction:
+        if net_f:
             image_dict.update(
                 {
                     "all/lf0": plot_data_to_numpy(
@@ -741,9 +784,9 @@ def train_and_evaluate(
         if epoch % save_every_epoch == 0:
             with torch.no_grad():
                 if hasattr(net_g, "module"):
-                    o, *_ = net_g.module.infer(*reference)
+                    o, *_ = net_g.module.infer(*reference, f0_prediction=net_f)
                 else:
-                    o, *_ = net_g.infer(*reference)
+                    o, *_ = net_g.infer(*reference, f0_prediction=net_f)
             audio_dict = {f"gen/audio_{global_step:07d}": o[0, :, :]}
             summarize(
                 writer=writer,
@@ -776,6 +819,13 @@ def train_and_evaluate(
                 config.train.learning_rate,
                 epoch,
                 os.path.join(experiment_dir, "G_" + checkpoint_suffix),
+            )
+            save_checkpoint(
+                net_f,
+                optim_f,
+                config.train.learning_rate,
+                epoch,
+                os.path.join(experiment_dir, "F_" + checkpoint_suffix),
             )
             save_checkpoint(
                 net_d,
