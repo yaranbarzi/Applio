@@ -3,14 +3,14 @@
 </h1>
 
 ## Notebook For Training RVC
-<p align="center">
+
   <a href="https://colab.research.google.com/github/yaranbarzi/Applio/blob/main/Applio_2025_RVC.ipynb" target="_blank">
     <img src="https://img.shields.io/badge/Open%20in%20Colab-Applio_2025_RVC-F9AB00?style=for-the-badge&logo=googlecolab&logoColor=white" alt="Open in Google Colab"/>
   </a>
 </p>
 
 ## Notebook For Inference
-<p align="center">
+
   <a href="https://colab.research.google.com/github/yaranbarzi/Applio/blob/main/Inference_2025.ipynb" target="_blank">
     <img src="https://img.shields.io/badge/Open%20in%20Colab-Inference_2025-F9AB00?style=for-the-badge&logo=googlecolab&logoColor=white" alt="Open in Google Colab"/>
   </a>
