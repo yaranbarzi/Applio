@@ -3,11 +3,15 @@
 </h1>
 ## Notebook For Inference
 
+markdown:README_colab.md
+## Notebook For Inference
+
 <p align="center">
-  <a href="https://github.com/yaranbarzi/Applio/blob/main/Inference_2025.ipynb" target="_blank">
-    <img src="https://img.shields.io/badge/📓%20Jupyter%20Notebook-Inference_2025-orange?style=for-the-badge&logo=jupyter&logoColor=white" alt="Inference Notebook"/>
+  <a href="https://colab.research.google.com/github/yaranbarzi/Applio/blob/main/Inference_2025.ipynb" target="_blank">
+    <img src="https://img.shields.io/badge/Open%20in%20Colab-Inference_2025-F9AB00?style=for-the-badge&logo=googlecolab&logoColor=white" alt="Open in Google Colab"/>
   </a>
 </p>
+
 <p align="center">
     <img alt="Contributors" src="https://img.shields.io/github/contributors/iahispano/applio?style=for-the-badge&color=FFFFFF" />
     <img alt="Release" src="https://img.shields.io/github/release/iahispano/applio?style=for-the-badge&color=FFFFFF" />
