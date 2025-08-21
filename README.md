@@ -1,6 +1,14 @@
+
 <h1 align="center">
   <a href="https://applio.org" target="_blank"><img src="https://github.com/IAHispano/Applio/assets/133521603/78e975d8-b07f-47ba-ab23-5a31592f322a" alt="Applio"></a>
 </h1>
+
+## Notebook For Applio UI
+<p align="center">
+  <a href="https://colab.research.google.com/github/yaranbarzi/Applio/blob/main/Applio.ipynb" target="_blank">
+    <img src="https://img.shields.io/badge/Open%20in%20Colab-Applio_2025_RVC-F9AB00?style=for-the-badge&logo=googlecolab&logoColor=white" alt="Open in Google Colab"/>
+  </a>
+</p>
 
 ## Notebook For Training RVC
 <p align="center">
